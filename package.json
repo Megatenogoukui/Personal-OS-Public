@@ -1,0 +1,30 @@
+{
+  "name": "personal-os",
+  "version": "0.1.0",
+  "description": "A private, self-hosted operating system for work, money, health, reading, habits, and planning.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Megatenogoukui/Personal-OS-Public.git"
+  },
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/core"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/web run dev",
+    "build": "npm --workspace packages/core run build && npm --workspace apps/web run build",
+    "typecheck": "npm --workspace packages/core run typecheck && npm --workspace packages/core run build && npm --workspace apps/web run typecheck",
+    "test": "npm --workspace packages/core run test",
+    "store:backup:mongodb": "node scripts/backup-mongodb.mjs",
+    "store:migrate:mongodb": "node scripts/migrate-store-to-mongodb.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.0"
+  }
+}

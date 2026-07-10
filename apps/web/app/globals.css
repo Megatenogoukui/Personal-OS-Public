@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 33% 97%;
+  --foreground: 222 47% 11%;
+  --muted: 215 18% 46%;
+  --card: 0 0% 100%;
+  --surface: 210 30% 96%;
+  --border: 214 24% 88%;
+  --accent: 173 80% 31%;
+  --danger: 0 74% 52%;
+  --warning: 36 91% 48%;
+  --success: 151 69% 35%;
+  --sidebar: 222 47% 10%;
+  --sidebar-foreground: 210 30% 96%;
+  --sidebar-muted: 215 16% 70%;
+}
+
+.dark {
+  --background: 222 47% 8%;
+  --foreground: 210 30% 96%;
+  --muted: 215 16% 66%;
+  --card: 222 38% 12%;
+  --surface: 222 42% 10%;
+  --border: 217 27% 22%;
+  --accent: 173 72% 43%;
+  --danger: 0 74% 58%;
+  --warning: 38 92% 56%;
+  --success: 151 69% 44%;
+  --sidebar: 222 47% 7%;
+  --sidebar-foreground: 210 30% 96%;
+  --sidebar-muted: 215 16% 68%;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--surface)) 100%);
+  color: hsl(var(--foreground));
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+::selection {
+  background: hsl(var(--accent) / 0.18);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
