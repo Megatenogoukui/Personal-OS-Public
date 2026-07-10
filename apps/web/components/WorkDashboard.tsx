@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, ExternalLink, Search, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Pencil, Plus, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { buildAttentionQueue, enrichWorkTasks, isAssignedToMe, summarizeWork, type WorkTask, type WorkTaskWithScore } from "@personal-os/core";
 import { AttentionQueue } from "./AttentionQueue";
@@ -8,6 +8,20 @@ import { StatCard } from "./StatCard";
 import { cn } from "@/lib/utils";
 
 type FilterKey = "all" | "critical" | "assigned" | "dueSoon" | "overdue" | "missingFe" | "missingBe" | "missingBoth" | "blocked" | "stale";
+type TaskDraft = {
+  id?: string;
+  externalId: string;
+  title: string;
+  description: string;
+  client: string;
+  project: string;
+  status: WorkTask["status"];
+  priority: WorkTask["priority"];
+  deadline: string;
+  feAssignee: string;
+  beAssignee: string;
+  lead: string;
+};
 
 export function WorkDashboard({ identity = "" }: { identity?: string }) {
   const [tasks, setTasks] = useState<WorkTask[]>([]);
@@ -15,6 +29,8 @@ export function WorkDashboard({ identity = "" }: { identity?: string }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Loading work tasks...");
   const [importText, setImportText] = useState("");
+  const [editor, setEditor] = useState<TaskDraft | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function loadTasks() {
     const response = await fetch("/api/work/tasks", { cache: "no-store" });
@@ -51,6 +67,45 @@ export function WorkDashboard({ identity = "" }: { identity?: string }) {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not parse pasted export.");
     }
+  }
+
+  async function saveTask() {
+    if (!editor?.title.trim()) {
+      setStatus("Task title is required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await fetch("/api/work/tasks", {
+        method: editor.id ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...editor,
+          assignedTo: [editor.lead, editor.feAssignee, editor.beAssignee].filter(Boolean),
+        }),
+      });
+      const body = (await response.json()) as { tasks?: WorkTask[]; message?: string };
+      if (!response.ok) throw new Error(body.message || "Could not save task.");
+      setTasks(body.tasks ?? []);
+      setEditor(null);
+      setStatus(editor.id ? "Task updated." : "Task added.");
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : "Could not save task.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTask(task: WorkTask) {
+    if (!window.confirm(`Delete “${task.title}”?`)) return;
+    const response = await fetch(`/api/work/tasks?id=${encodeURIComponent(task.id)}`, { method: "DELETE" });
+    const body = (await response.json()) as { tasks?: WorkTask[]; message?: string };
+    if (!response.ok) {
+      setStatus(body.message || "Could not delete task.");
+      return;
+    }
+    setTasks(body.tasks ?? []);
+    setStatus("Task deleted.");
   }
 
   useEffect(() => {
@@ -176,10 +231,15 @@ export function WorkDashboard({ identity = "" }: { identity?: string }) {
               </button>
             ))}
           </div>
-          <label className="flex min-w-72 items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm">
-            <Search size={16} className="text-muted" />
-            <input className="w-full bg-transparent outline-none" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search work..." />
-          </label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm">
+              <Search size={16} className="text-muted" />
+              <input className="w-full bg-transparent outline-none" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search work..." />
+            </label>
+            <button type="button" onClick={() => setEditor(emptyTaskDraft())} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-white">
+              <Plus size={16} /> Add task
+            </button>
+          </div>
         </div>
       </section>
 
@@ -219,7 +279,11 @@ export function WorkDashboard({ identity = "" }: { identity?: string }) {
                 </a>
               ) : null}
             </div>
-            <div className="text-right text-lg font-semibold lg:col-span-1">{task.score}</div>
+            <div className="flex items-center justify-end gap-1 lg:col-span-1">
+              <span className="mr-1 text-lg font-semibold">{task.score}</span>
+              <button type="button" title="Edit task" aria-label={`Edit ${task.title}`} onClick={() => setEditor(draftFromTask(task))} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted transition hover:border-accent/50 hover:text-accent"><Pencil size={14} /></button>
+              <button type="button" title="Delete task" aria-label={`Delete ${task.title}`} onClick={() => void deleteTask(task)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted transition hover:border-danger/50 hover:text-danger"><Trash2 size={14} /></button>
+            </div>
           </article>
         ))}
         {enriched.length === 0 ? (
@@ -228,8 +292,67 @@ export function WorkDashboard({ identity = "" }: { identity?: string }) {
           </div>
         ) : null}
       </section>
+
+      {editor ? <TaskEditor draft={editor} saving={saving} onChange={setEditor} onClose={() => setEditor(null)} onSave={() => void saveTask()} /> : null}
     </div>
   );
+}
+
+function TaskEditor({ draft, saving, onChange, onClose, onSave }: { draft: TaskDraft; saving: boolean; onChange: (draft: TaskDraft) => void; onClose: () => void; onSave: () => void }) {
+  const fieldClass = "mt-1.5 h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-accent";
+  const set = (key: keyof TaskDraft, value: string) => onChange({ ...draft, [key]: value });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label={draft.id ? "Edit work task" : "Add work task"}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border bg-card shadow-xl">
+        <div className="sticky top-0 flex items-center justify-between border-b bg-card px-5 py-4">
+          <div><div className="text-xs font-semibold uppercase tracking-widest text-muted">Work task</div><h2 className="mt-1 text-xl font-semibold">{draft.id ? "Edit task" : "Add task"}</h2></div>
+          <button type="button" title="Close" aria-label="Close task editor" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-background"><X size={17} /></button>
+        </div>
+        <div className="grid gap-4 p-5 md:grid-cols-2">
+          <TaskField label="Title" value={draft.title} onChange={(value) => set("title", value)} required />
+          <TaskField label="Task ID" value={draft.externalId} onChange={(value) => set("externalId", value)} placeholder="Optional" />
+          <TaskField label="Client" value={draft.client} onChange={(value) => set("client", value)} />
+          <TaskField label="Project" value={draft.project} onChange={(value) => set("project", value)} />
+          <label className="text-sm font-medium">Status<select className={fieldClass} value={draft.status} onChange={(event) => set("status", event.target.value)}>{["new", "todo", "in_progress", "blocked", "waiting", "review", "qa", "done", "cancelled"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select></label>
+          <label className="text-sm font-medium">Priority<select className={fieldClass} value={draft.priority} onChange={(event) => set("priority", event.target.value)}>{["low", "medium", "high", "critical"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <TaskField label="Deadline" type="datetime-local" value={draft.deadline} onChange={(value) => set("deadline", value)} />
+          <TaskField label="Lead / owner" value={draft.lead} onChange={(value) => set("lead", value)} />
+          <TaskField label="FE assignee" value={draft.feAssignee} onChange={(value) => set("feAssignee", value)} />
+          <TaskField label="BE assignee" value={draft.beAssignee} onChange={(value) => set("beAssignee", value)} />
+          <label className="text-sm font-medium md:col-span-2">Description<textarea className="mt-1.5 min-h-24 w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:border-accent" value={draft.description} onChange={(event) => set("description", event.target.value)} /></label>
+        </div>
+        <div className="flex justify-end gap-2 border-t px-5 py-4">
+          <button type="button" onClick={onClose} className="h-10 rounded-lg border bg-background px-4 text-sm font-semibold">Cancel</button>
+          <button type="button" disabled={saving} onClick={onSave} className="inline-flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-white disabled:opacity-60"><Save size={16} />{saving ? "Saving..." : "Save task"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskField({ label, value, onChange, placeholder, required, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; required?: boolean; type?: string }) {
+  return <label className="text-sm font-medium">{label}<input type={type} className="mt-1.5 h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-accent" value={value} placeholder={placeholder} required={required} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function emptyTaskDraft(): TaskDraft {
+  return { externalId: "", title: "", description: "", client: "", project: "", status: "todo", priority: "medium", deadline: "", feAssignee: "", beAssignee: "", lead: "" };
+}
+
+function draftFromTask(task: WorkTask): TaskDraft {
+  return {
+    id: task.id,
+    externalId: task.externalId,
+    title: task.title,
+    description: task.description || "",
+    client: task.client || "",
+    project: task.project || "",
+    status: task.status,
+    priority: task.priority,
+    deadline: task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "",
+    feAssignee: task.feAssignee || "",
+    beAssignee: task.beAssignee || "",
+    lead: task.lead || "",
+  };
 }
 
 const filterOptions: Array<{ key: FilterKey; label: string }> = [
